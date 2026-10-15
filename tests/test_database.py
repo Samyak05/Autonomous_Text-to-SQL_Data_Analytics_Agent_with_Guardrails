@@ -156,3 +156,12 @@ def test_interrupted_query_raises_timeout(monkeypatch):
             "SELECT customer_id FROM customers"
         )
 
+def test_rejected_sql_never_opens_database_connection():
+    with patch("src.database.get_connection") as mock_connection:
+        with pytest.raises(SQLValidationError):
+            database.execute_query(
+                "SELECT * FROM customers "
+                "UNION SELECT * FROM orders"
+            )
+
+        mock_connection.assert_not_called()
