@@ -2,6 +2,7 @@
 """SQL validation and security guardrails."""
 
 import sqlglot
+import re
 from sqlglot import exp
 
 
@@ -110,13 +111,35 @@ def validate_sql(sql: str) -> str:
                 "Qualified table references are not allowed."
             )
 
-    # Block known dangerous functions anywhere in the expression tree.
-    for function in tree.find_all(exp.Func):
-        function_name = getattr(function, "name", "").lower()
+    
+    # Block dangerous functions in the SQL text as a
+    # defense-in-depth check. This catches functions used
+    # inside SELECT expressions as well as table sources.
+    blocked_pattern = (
+        r"\b(?:"
+        + "|".join(
+            re.escape(name)
+            for name in sorted(BLOCKED_FUNCTIONS, key=len, reverse=True)
+        )
+        + r")\s*\("
+    )
 
-        if function_name in BLOCKED_FUNCTIONS:
+    if re.search(blocked_pattern, sql, flags=re.IGNORECASE):
+        raise SQLValidationError(
+            "A restricted SQL function was detected."
+        )
+
+    # Also inspect parsed function nodes using SQLGlot's
+    # canonical function name where available.
+    for function in tree.find_all(exp.Func):
+        function_names = {
+            str(getattr(function, "name", "")).lower(),
+            str(function.sql_name()).lower(),
+        }
+
+        if function_names & BLOCKED_FUNCTIONS:
             raise SQLValidationError(
-                f"Function '{function_name}' is not allowed."
+                "A restricted SQL function was detected."
             )
 
     return tree.sql(dialect="duckdb")
