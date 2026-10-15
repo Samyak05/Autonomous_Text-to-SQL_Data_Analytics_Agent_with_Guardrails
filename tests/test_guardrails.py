@@ -90,3 +90,56 @@ def test_rejects_oversized_sql():
             + " " * 10_000
         )
 
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # External-data functions in scalar expressions
+        "SELECT read_csv('secret.csv') FROM customers",
+        "SELECT read_parquet('secret.parquet') FROM products",
+
+        # Set operations outside the supported SELECT policy
+        "SELECT name FROM customers UNION SELECT city FROM customers",
+
+        # Attempts to access unapproved tables through joins
+        "SELECT * FROM customers JOIN secrets ON TRUE",
+
+        # Attempts to access qualified tables
+        "SELECT * FROM customers JOIN main.orders ON TRUE",
+
+        # Nested query attempts
+        "SELECT * FROM customers WHERE customer_id IN "
+        "(SELECT customer_id FROM orders)",
+    ],
+)
+def test_blocks_adversarial_sql(sql):
+    with pytest.raises(SQLValidationError):
+        validate_sql(sql)
+
+
+def test_allows_valid_aggregate_query():
+    sql = """
+        SELECT category, COUNT(*) AS product_count
+        FROM products
+        GROUP BY category
+        ORDER BY product_count DESC
+    """
+
+    validated_sql = validate_sql(sql)
+
+    assert "SELECT" in validated_sql.upper()
+    assert "GROUP BY" in validated_sql.upper()
+
+
+def test_allows_valid_join_query():
+    sql = """
+        SELECT c.name, o.order_id
+        FROM customers c
+        JOIN orders o
+          ON c.customer_id = o.customer_id
+    """
+
+    validated_sql = validate_sql(sql)
+
+    assert "JOIN" in validated_sql.upper()
+
