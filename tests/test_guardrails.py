@@ -41,3 +41,52 @@ def test_rejects_empty_query():
 def test_rejects_invalid_syntax():
     with pytest.raises(SQLValidationError):
         validate_sql("SELECT FROM WHERE")
+
+
+def test_blocks_table_valued_file_readers():
+    queries = [
+        "SELECT * FROM read_parquet('data.parquet')",
+        "SELECT * FROM read_csv_auto('data.csv')",
+    ]
+
+    for sql in queries:
+        with pytest.raises(SQLValidationError):
+            validate_sql(sql)
+
+
+def test_blocks_qualified_table_references():
+    with pytest.raises(SQLValidationError):
+        validate_sql("SELECT * FROM main.customers")
+
+
+def test_blocks_select_into():
+    with pytest.raises(SQLValidationError):
+        validate_sql(
+            "SELECT * INTO backup FROM customers"
+        )
+
+
+def test_blocks_ctes():
+    with pytest.raises(SQLValidationError):
+        validate_sql(
+            "WITH x AS (SELECT * FROM customers) "
+            "SELECT * FROM x"
+        )
+
+
+def test_blocks_subqueries():
+    with pytest.raises(SQLValidationError):
+        validate_sql(
+            "SELECT * FROM customers "
+            "WHERE customer_id IN "
+            "(SELECT customer_id FROM orders)"
+        )
+
+
+def test_rejects_oversized_sql():
+    with pytest.raises(SQLValidationError):
+        validate_sql(
+            "SELECT * FROM customers "
+            + " " * 10_000
+        )
+
