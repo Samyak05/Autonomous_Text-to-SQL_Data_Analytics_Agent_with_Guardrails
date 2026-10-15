@@ -51,6 +51,14 @@ def display_response(response: dict) -> None:
         hide_index=True,
     )
 
+    if df.attrs.get("truncated", False):
+        limit = df.attrs.get("row_limit", 1000)
+        st.warning(
+            f"Results were limited to {limit:,} rows. "
+            "The complete result may contain additional rows."
+        )
+
+
     # Choose a meaningful numeric column for visualization.
     numeric_columns = df.select_dtypes(
         include="number"
