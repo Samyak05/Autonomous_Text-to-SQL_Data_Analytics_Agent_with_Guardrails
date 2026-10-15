@@ -6,5 +6,10 @@ plotly>=5.18.0
 langchain>=0.1.0
 langchain-openai>=0.0.5  # Or change to anthropic/google-genai depending on your API key
 chromadb>=0.4.22        # For vector schema retrieval
+
+# Testing
 pytest==9.1.1
+pytest-mock==3.16.0
+
+# Environment variables
 python-dotenv>=1.0.0
