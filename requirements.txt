@@ -7,3 +7,4 @@ langchain>=0.1.0
 langchain-openai>=0.0.5  # Or change to anthropic/google-genai depending on your API key
 chromadb>=0.4.22        # For vector schema retrieval
 pytest==9.1.1
+python-dotenv>=1.0.0
