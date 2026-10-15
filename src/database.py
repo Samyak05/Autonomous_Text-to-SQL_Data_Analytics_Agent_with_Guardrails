@@ -1,13 +1,14 @@
 """Database connection, schema inspection, and safe query execution."""
 
-from pathlib import Path
-
 import duckdb
 import pandas as pd
+import threading
 
+from pathlib import Path
 from src.guardrails import validate_sql
 
 
+QUERY_TIMEOUT_SECONDS = 5
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "data" / "ecommerce.duckdb"
 
@@ -67,26 +68,43 @@ def get_schema():
         connection.close()
 
 
+
 def execute_query(sql: str) -> pd.DataFrame:
-    """Validate SQL, execute with restricted DuckDB settings,
-    and cap the number of returned rows.
-    """
+    """Validate SQL and execute it with resource and time limits."""
 
-    # Validate before opening a database connection.
     safe_sql = validate_sql(sql)
-
     connection = get_connection()
 
+    timed_out = threading.Event()
+
+    def interrupt_query():
+        timed_out.set()
+        try:
+            connection.interrupt()
+        except Exception:
+            pass
+
+    timer = threading.Timer(
+        QUERY_TIMEOUT_SECONDS,
+        interrupt_query,
+    )
+    timer.daemon = True
+
     try:
-        # The original query has already passed validation.
-        # The outer LIMIT caps rows materialized for the application.
         limited_sql = (
             f"SELECT * FROM ({safe_sql}) AS _agent_result "
             f"LIMIT {MAX_RESULT_ROWS + 1}"
         )
 
+        timer.start()
+
         result = connection.execute(limited_sql)
         df = result.fetchdf()
+
+        if timed_out.is_set():
+            raise TimeoutError(
+                f"Query exceeded {QUERY_TIMEOUT_SECONDS} seconds."
+            )
 
         if len(df) > MAX_RESULT_ROWS:
             df = df.iloc[:MAX_RESULT_ROWS].copy()
@@ -97,5 +115,13 @@ def execute_query(sql: str) -> pd.DataFrame:
 
         return df
 
+    except Exception as exc:
+        if timed_out.is_set():
+            raise TimeoutError(
+                f"Query exceeded {QUERY_TIMEOUT_SECONDS} seconds."
+            ) from exc
+        raise
+
     finally:
+        timer.cancel()
         connection.close()
