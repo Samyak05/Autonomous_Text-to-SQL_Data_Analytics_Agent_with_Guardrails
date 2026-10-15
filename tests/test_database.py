@@ -110,3 +110,49 @@ def test_read_only_connection_has_restrictions():
         assert kwargs["config"]["memory_limit"] == database.MAX_MEMORY
         assert kwargs["config"]["threads"] == str(database.MAX_THREADS)
 
+
+def test_interrupted_query_raises_timeout(monkeypatch):
+    class FakeTimer:
+        def __init__(self, interval, callback):
+            self.callback = callback
+
+        def start(self):
+            # Simulate the timeout firing before execution completes.
+            self.callback()
+
+        def cancel(self):
+            pass
+
+    class FakeConnection:
+        interrupted = False
+
+        def interrupt(self):
+            self.interrupted = True
+
+        def execute(self, sql):
+            if self.interrupted:
+                raise RuntimeError("Query interrupted")
+            return self
+
+        def fetchdf(self):
+            return pd.DataFrame({"value": [1]})
+
+        def close(self):
+            pass
+
+    connection = FakeConnection()
+
+    monkeypatch.setattr(
+        "src.database.threading.Timer",
+        FakeTimer,
+    )
+    monkeypatch.setattr(
+        "src.database.get_connection",
+        lambda: connection,
+    )
+
+    with pytest.raises(TimeoutError, match="exceeded"):
+        database.execute_query(
+            "SELECT customer_id FROM customers"
+        )
+
